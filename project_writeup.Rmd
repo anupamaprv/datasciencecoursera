@@ -1,0 +1,228 @@
+---
+title: "Practical Machine Learning - Final assignment"
+author: "Anupama V"
+date: "April 8, 2016"
+output: 
+  html_document
+
+---
+
+<font color="purple"><h1> Problem Statement</h1></font>
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. <br />
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. <br />
+More information is available from the website here: <a href =  http://groupware.les.inf.puc-rio.br/har>http://groupware.les.inf.puc-rio.br/har</a>
+<br /><br />
+
+<font color="purple"><h1> Datasets </h1></font>
+The training data for this project are available here:<br />
+<a href = https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv </a> <br />
+The test data are available here:<br />
+<a href = https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv </a>
+<br /><br />
+
+
+<font color="purple"><h1>Solution</h1></font><br />
+
+<font color="purple"><h3>Preparing the Data</h3></font>
+Here we load the test and training datasets and all required library packages.<br />
+We remove a small sample from the training set for local validation. <br />
+We also check for NAs in the datasets so we can choose to ignore columns with large number of missing values, from our prediction models. Using this check, out of 160 columns, we only select about 30 columns.
+
+```{r chunk_name, include=FALSE}
+# load all required library packages
+library(ggplot2)
+library(lattice)
+library(tree)
+library (randomForest)
+library(e1071) # library for Naive-Bayes
+library("xgboost")
+library(readr) # for read_csv() to use with xgboost predictive model.
+```
+
+```{r}
+# Load training and test datasets
+jb_train = read.delim(file = 'pml-training.csv', header = TRUE, 
+                      sep = ',', dec = '.')
+jb_test = read.delim(file = 'pml-testing.csv', header = TRUE, 
+                     sep = ',', dec = '.')
+
+# dividing the training into a validation and local test 
+data = jb_train
+indexes = sample(1:nrow(data), size=0.2*nrow(data)) #Sample Indexes
+
+# Split data
+test = data[indexes,] # validation dataset with 3924 rows & 160 columns
+train = data[-indexes,] # training set with 15698 rows & 160 columns
+```
+
+<br />
+
+
+
+
+<font color="purple"><h3>Prediction Model 1 - Decision Trees</h3></font>
+Step 1.1 : Create the tree model
+```{r}
+# create the tree model
+tree_opt <- tree(classe ~  raw_timestamp_part_1 +  raw_timestamp_part_2+
+  num_window + roll_belt + pitch_belt + yaw_belt+ 
+  total_accel_belt + gyros_belt_x + gyros_belt_y + 
+  gyros_belt_z + accel_arm_z + accel_belt_x+ accel_belt_y+
+  accel_belt_z + magnet_belt_x + magnet_belt_y+ 
+  magnet_belt_z + roll_arm + pitch_arm + yaw_arm+ 
+  total_accel_arm + gyros_arm_x + gyros_arm_y + gyros_arm_z+
+  accel_arm_x + accel_arm_y + accel_arm_z + magnet_arm_x+
+  magnet_arm_y + magnet_arm_z + roll_dumbbell + pitch_dumbbell+
+  yaw_dumbbell,  data = train)
+
+# create new output column for testing with validation dataset
+Prediction <- predict(tree_opt, test, type = "class")
+submit_tree <- data.frame(userId = test$X, cl_pred = Prediction)
+chk_tree_local <- data.frame(Id = submit_tree$userId, org_predn = test$classe,
+                             new_pred = submit_tree$cl_pred)
+```
+
+<br />Step 1.2 - Validation with local set
+``` {r}
+table(chk_tree_local$org_pred, chk_tree_local$new_pred)
+```
+From the validation matrix, we see this model has an accuracy of about <font color = "purple"><b>57.11%</b></font><br /><br />
+
+Step 1.3 - Making Predictions
+```{r}
+Prediction <- predict(tree_opt, jb_test, type = "class")
+submit <- data.frame(userId = jb_test$X, Class = Prediction)
+submit$Class
+
+# Output accuracy from quiz submission= 40%
+```
+
+<br /><br />
+
+<font color="purple"><h3>Prediction Model 2 - Random Forest algorithm</h3></font>
+Step 2.1 : Create the model
+``` {r}
+set.seed(37) # for reproducability
+b1 <- randomForest(classe ~  raw_timestamp_part_1 +  raw_timestamp_part_2+
+                     num_window + roll_belt + pitch_belt + yaw_belt+ 
+                     total_accel_belt + gyros_belt_x + gyros_belt_y + 
+                     gyros_belt_z + accel_arm_z + accel_belt_x+ accel_belt_y+
+                     accel_belt_z + magnet_belt_x + magnet_belt_y+ 
+                     magnet_belt_z + roll_arm + pitch_arm + yaw_arm+ 
+                     total_accel_arm + gyros_arm_x + gyros_arm_y + gyros_arm_z+
+                     accel_arm_x + accel_arm_y + accel_arm_z + magnet_arm_x+
+                     magnet_arm_y + magnet_arm_z + roll_dumbbell + pitch_dumbbell+
+                     yaw_dumbbell , data = train,
+                   importance =TRUE)
+
+# visualize model 
+summary(b1)
+plot(b1)
+
+```
+
+<br />Step 2.2 - Validation with local set
+``` {r}
+Predrf_local <- predict(b1, test)
+chkrf_local <- data.frame(userID = test$X, Classe_new = Predrf_local)
+chk_rf_validn <- data.frame(Id = test$X, org_predn = test$classe,
+                             new_pred = chkrf_local$Classe_new)
+table(chk_rf_validn$org_pred, chk_rf_validn$new_pred)
+```
+From the validation matrix, we see this model has an accuracy of about <font color = "purple"><b>99.89%</b></font> with only 4 incorrect predictions!<br /><br />
+
+
+
+Step 2.3 - Making Predictions
+```{r}
+Predrf <- predict(b1, jb_test)
+chkrf <- data.frame(userID = jb_test$X, Classe = Predrf)
+submit <- data.frame(userId = jb_test$X, Class = Prediction)
+
+# Output accuracy from quiz submission = 100%
+```
+<br />
+
+
+
+<font color="purple"><h3>Prediction Model 3 - Naive Bayes Theorem</h3></font>
+Step 3.1 : Create the model<br />
+Here we take an advanced machine learning algorithm, Naive-Bayes, to test if it performs any better...
+``` {r}
+fit2 <- naiveBayes(classe ~  raw_timestamp_part_1 +  raw_timestamp_part_2+
+                     num_window + roll_belt + pitch_belt + yaw_belt+ 
+                     total_accel_belt + gyros_belt_x + gyros_belt_y + 
+                     gyros_belt_z + accel_arm_z + accel_belt_x+ accel_belt_y+
+                     accel_belt_z + magnet_belt_x + magnet_belt_y+ 
+                     magnet_belt_z + roll_arm + pitch_arm + yaw_arm+ 
+                     total_accel_arm + gyros_arm_x + gyros_arm_y + gyros_arm_z+
+                     accel_arm_x + accel_arm_y + accel_arm_z + magnet_arm_x+
+                     magnet_arm_y + magnet_arm_z + roll_dumbbell + pitch_dumbbell+
+                     yaw_dumbbell , 
+                   data = train)
+summary(fit2)
+```
+
+<br />Step 3.2 - Validation with local set
+```{r}
+local_test <- predict(fit2, test)
+submit_nb <- data.frame(userId = test$X, Class = local_test)
+chk_nb <- data.frame(id = test$X, org_pred = test$classe, 
+                     new_pred = submit_nb$Class)
+table(chk_nb$org_pred, chk_nb$new_pred)
+
+```
+From the validation matrix, we see this model has an accuracy of about <font color = "purple"><b>47.45% </b></font> with ONLY 1862 correct entries & a staggering  2062 incorrect predictions!<br /><br />
+
+Step 3.3 - Making Predictions
+```{r}
+prednb_test <- predict(fit2, jb_test)
+submit <- data.frame(userId = jb_test$X, Class = prednb_test)
+
+# Output accuracy from quiz submission = 100%
+```
+<br />
+
+
+
+<font color="purple"><h3>Comparing the Models</h3></font>
+Here we do a quick comparison of the three models:
+<table border="1">
+<tr>
+<td><b> No. </b></td>
+<td><b> Model Name</b></td>
+<td><b> Model accuracy (local) </b></td>
+<td><b> Output Accuracy </b></td>
+<td><b> Remarks </b></td>
+</tr>
+<tr>
+<td><b> 1. </b></td>
+<td><b> Decision Trees </b></td>
+<td><b> 57.11% </b></td>
+<td><b> 40% </b></td>
+<td><b> Performs slightly better than random guess! </b></td>
+</tr>
+<tr>
+<td><b> 2. </b></td>
+<td><b> Random Forest </b></td>
+<td><b> 98.99% </b></td>
+<td><b> 100% </b></td>
+<td><b> Perfect Prediction</b></td>
+</tr>
+<tr>
+<td><b> 3. </b></td>
+<td><b> Naive-Bayes </b></td>
+<td><b> 47.45% </b></td>
+<td><b> 40% </b></td>
+<td><b> Worst performance despite complexity. </b></td>
+</tr>
+</table>
+<br />
+
+<font color="purple"><h3>Conclusions</h3></font>
+Even without knowing the final output accuracy, the <b>random forest algorithm </b> gives a great prediction accuracy and would be our first and ONLY choice.
+<br />
+
